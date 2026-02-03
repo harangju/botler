@@ -8,6 +8,7 @@ const TOOL_ICONS: Record<string, string> = {
   edit_file: "~",
   glob: "*",
   grep: "?",
+  ls: "#",
 }
 
 interface ToolCallProps {
@@ -31,6 +32,9 @@ function getSummary(name: string, args: Record<string, unknown>): string {
   if (name === "grep" && args.pattern) {
     return String(args.pattern)
   }
+  if (name === "ls") {
+    return String(args.path || ".")
+  }
   return JSON.stringify(args).slice(0, 40)
 }
 
@@ -40,7 +44,7 @@ function getResultSummary(name: string, result?: string): string {
     const trimmed = result.trim()
     return trimmed.length > 30 ? trimmed.slice(0, 27) + "..." : trimmed || "done"
   }
-  if (["read_file", "glob", "grep"].includes(name)) {
+  if (["read_file", "glob", "grep", "ls"].includes(name)) {
     const lines = result.trim().split("\n").length
     return `${lines} lines`
   }
