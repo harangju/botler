@@ -1,6 +1,7 @@
 export interface Message {
   role: "user" | "assistant"
   content: string
+  agentName?: string
 }
 
 export interface ToolCall {

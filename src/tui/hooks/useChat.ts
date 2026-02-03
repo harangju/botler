@@ -1,8 +1,9 @@
 import { useState, useCallback } from "react"
 import { runAgent } from "../../core/engine.js"
 import type { Message, ToolCall } from "../../core/types.js"
+import { defaultAgent, type Agent } from "../../agents/index.js"
 
-export function useChat() {
+export function useChat(agent: Agent = defaultAgent) {
   const [messages, setMessages] = useState<Message[]>([])
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([])
   const [streamingText, setStreamingText] = useState("")
@@ -19,7 +20,7 @@ export function useChat() {
 
     const currentToolCalls: ToolCall[] = []
 
-    for await (const event of runAgent(updatedMessages)) {
+    for await (const event of runAgent(updatedMessages, agent)) {
       switch (event.type) {
         case "text":
           setStreamingText(event.text)
@@ -66,7 +67,7 @@ export function useChat() {
 
         case "done":
           if (event.response) {
-            setMessages(prev => [...prev, { role: "assistant", content: event.response }])
+            setMessages(prev => [...prev, { role: "assistant", content: event.response, agentName: agent.name }])
           }
           setStreamingText("")
           break
@@ -74,7 +75,7 @@ export function useChat() {
     }
 
     setIsLoading(false)
-  }, [messages])
+  }, [messages, agent])
 
   return {
     messages,

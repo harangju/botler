@@ -2,9 +2,11 @@ import type Anthropic from "@anthropic-ai/sdk"
 import { getClient } from "./client.js"
 import { getToolSchemas, executeTool } from "../tools/index.js"
 import type { Message, EngineEvent } from "./types.js"
+import { defaultAgent, type Agent } from "../agents/index.js"
 
 export async function* runAgent(
   messages: Message[],
+  agent: Agent = defaultAgent,
   model = "claude-sonnet-4-20250514"
 ): AsyncGenerator<EngineEvent> {
   const client = getClient()
@@ -24,6 +26,7 @@ export async function* runAgent(
     const stream = client.messages.stream({
       model,
       max_tokens: 4096,
+      system: agent.systemPrompt,
       tools,
       messages: apiMessages
     })

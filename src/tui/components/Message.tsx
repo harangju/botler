@@ -3,19 +3,23 @@ import { Box, Text } from "ink"
 interface MessageProps {
   role: "user" | "assistant"
   content: string
+  name?: string
   streaming?: boolean
 }
 
-export function Message({ role, content, streaming }: MessageProps) {
+const LABEL_WIDTH = 8
+
+export function Message({ role, content, name, streaming }: MessageProps) {
   const isUser = role === "user"
+  const label = isUser ? "You" : (name || "bot")
+  const paddedLabel = label.padStart(LABEL_WIDTH)
 
   return (
     <Box marginY={0}>
-      <Box width={6}>
-        <Text color={isUser ? "green" : "magenta"} bold>
-          {isUser ? "You" : "Agent"}
-        </Text>
-      </Box>
+      <Text color={isUser ? "green" : "magenta"} bold>
+        {paddedLabel}
+      </Text>
+      <Text> </Text>
       <Box flexDirection="column" flexGrow={1}>
         <Text wrap="wrap">
           {content}
