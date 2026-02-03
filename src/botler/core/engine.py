@@ -5,9 +5,27 @@ from collections.abc import AsyncIterator
 from typing import Protocol
 
 from pydantic_ai import Agent
-from pydantic_ai.messages import ModelMessage, ModelRequest, UserPromptPart
+from pydantic_ai.run import AgentRunResultEvent
+from pydantic_ai.messages import (
+    FunctionToolCallEvent,
+    FunctionToolResultEvent,
+    ModelMessage,
+    ModelRequest,
+    PartDeltaEvent,
+    PartStartEvent,
+    TextPart,
+    UserPromptPart,
+)
 
-from .schemas import AgentConfig, AgentContext, AgentResult, Message, ToolCall
+from .schemas import (
+    AgentConfig,
+    AgentContext,
+    AgentResult,
+    Message,
+    ToolCall,
+    ToolEndEvent,
+    ToolStartEvent,
+)
 from .tools import ALL_TOOLS, ToolDeps
 
 
@@ -116,6 +134,65 @@ class PydanticEngine:
                     response=full_response,
                     tool_calls=tool_calls,
                 )
+        except Exception as e:
+            yield AgentResult(
+                response="",
+                error=str(e),
+            )
+
+    async def run_stream_with_events(
+        self, prompt: str, context: AgentContext, history: list[Message]
+    ) -> AsyncIterator[str | ToolStartEvent | ToolEndEvent | AgentResult]:
+        """Run the agent with streaming, yielding tokens and tool events."""
+        deps = ToolDeps(workspace_path=context.workspace_path)
+        message_history = _messages_to_pydantic(history) if history else None
+
+        tool_calls: list[ToolCall] = []
+        full_response = ""
+
+        try:
+            async for event in self.agent.run_stream_events(
+                prompt,
+                deps=deps,
+                message_history=message_history,
+            ):
+                if isinstance(event, PartStartEvent):
+                    if isinstance(event.part, TextPart) and event.part.content:
+                        full_response += event.part.content
+                        yield event.part.content
+                elif isinstance(event, PartDeltaEvent):
+                    if hasattr(event.delta, "content_delta"):
+                        delta = event.delta.content_delta
+                        full_response += delta
+                        yield delta
+                elif isinstance(event, FunctionToolCallEvent):
+                    args = {}
+                    if event.part.args:
+                        args = (
+                            json.loads(event.part.args)
+                            if isinstance(event.part.args, str)
+                            else event.part.args
+                        )
+                    tool_calls.append(ToolCall(name=event.part.tool_name, args=args))
+                    yield ToolStartEvent(
+                        tool_call_id=event.part.tool_call_id,
+                        tool_name=event.part.tool_name,
+                        args=args,
+                    )
+                elif isinstance(event, FunctionToolResultEvent):
+                    result_str = str(event.result.content) if event.result.content else ""
+                    yield ToolEndEvent(
+                        tool_call_id=event.result.tool_call_id,
+                        result=result_str,
+                    )
+                elif isinstance(event, AgentRunResultEvent):
+                    if event.result.output:
+                        full_response = event.result.output
+
+            yield AgentResult(
+                response=full_response,
+                tool_calls=tool_calls,
+            )
         except Exception as e:
             yield AgentResult(
                 response="",

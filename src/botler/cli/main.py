@@ -11,8 +11,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from botler import __version__
+from botler.cli.display import ToolDisplayManager
 from botler.core.engine import PydanticEngine
-from botler.core.schemas import AgentContext, AgentResult, Message
+from botler.core.schemas import AgentContext, AgentResult, Message, ToolEndEvent, ToolStartEvent
 from botler.core.workspace import Workspace
 
 
@@ -90,20 +91,34 @@ async def _chat_async(workspace_path: Path, agent_name: str, thread_id: str | No
 
         click.echo("Agent> ", nl=False)
         result = None
-        async for chunk in engine.run_stream(user_input, context, history[:-1]):
-            if isinstance(chunk, AgentResult):
+        display = ToolDisplayManager()
+        text_started = False
+
+        async for chunk in engine.run_stream_with_events(user_input, context, history[:-1]):
+            if isinstance(chunk, ToolStartEvent):
+                if text_started:
+                    click.echo()
+                    text_started = False
+                display.start_tool(chunk.tool_call_id, chunk.tool_name, chunk.args)
+            elif isinstance(chunk, ToolEndEvent):
+                display.end_tool(chunk.tool_call_id, chunk.result)
+            elif isinstance(chunk, AgentResult):
                 result = chunk
             else:
+                if not text_started and display.completed_tools:
+                    display.finalize()
+                    click.echo("Agent> ", nl=False)
+                text_started = True
                 click.echo(chunk, nl=False)
                 sys.stdout.flush()
+
+        if display.active_tools or display.completed_tools:
+            display.finalize()
+
         click.echo()
 
         if result and result.error:
             click.echo(f"Error: {result.error}")
-
-        if result and result.tool_calls:
-            tools_used = ", ".join(tc.name for tc in result.tool_calls)
-            click.echo(click.style(f"  [tools: {tools_used}]", fg="cyan"))
 
         assistant_msg = Message(
             role="assistant",

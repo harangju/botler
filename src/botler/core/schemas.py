@@ -1,5 +1,6 @@
 """Message, AgentConfig, and other data schemas."""
 
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -49,3 +50,20 @@ class AgentResult(BaseModel):
     files_modified: list[str] = Field(default_factory=list)
     tool_calls: list[ToolCall] = Field(default_factory=list)
     error: str | None = None
+
+
+@dataclass
+class ToolStartEvent:
+    """Emitted when a tool call starts."""
+
+    tool_call_id: str
+    tool_name: str
+    args: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ToolEndEvent:
+    """Emitted when a tool call completes."""
+
+    tool_call_id: str
+    result: str
