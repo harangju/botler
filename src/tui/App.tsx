@@ -10,7 +10,7 @@ export function App() {
   const { exit } = useApp()
   const [inputValue, setInputValue] = useState("")
   const [currentAgent, setCurrentAgent] = useState(defaultAgent)
-  const { messages, toolCalls, streamingText, isLoading, sendMessage } = useChat(currentAgent)
+  const { messages, toolCalls, streamingText, isLoading, sendMessage } = useChat(currentAgent, setCurrentAgent)
 
   useInput((input, key) => {
     if (key.ctrl && input === "c") {

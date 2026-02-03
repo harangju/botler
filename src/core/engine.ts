@@ -14,7 +14,9 @@ export async function* runAgent(
 
   const apiMessages: Anthropic.MessageParam[] = messages.map(m => ({
     role: m.role,
-    content: m.content
+    content: m.agentName && m.role === "assistant"
+      ? `[@${m.agentName}] ${m.content}`
+      : m.content
   }))
 
   let continueLoop = true

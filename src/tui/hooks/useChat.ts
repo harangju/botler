@@ -2,8 +2,14 @@ import { useState, useCallback } from "react"
 import { runAgent } from "../../core/engine.js"
 import type { Message, ToolCall } from "../../core/types.js"
 import { defaultAgent, type Agent } from "../../agents/index.js"
+import { parseMention, extractMention } from "../../core/mentions.js"
 
-export function useChat(agent: Agent = defaultAgent) {
+const MAX_CHAIN_DEPTH = 5
+
+export function useChat(
+  agent: Agent = defaultAgent,
+  onAgentChange?: (agent: Agent) => void
+) {
   const [messages, setMessages] = useState<Message[]>([])
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([])
   const [streamingText, setStreamingText] = useState("")
@@ -14,68 +20,107 @@ export function useChat(agent: Agent = defaultAgent) {
     setStreamingText("")
     setToolCalls([])
 
-    const userMessage: Message = { role: "user", content }
-    const updatedMessages = [...messages, userMessage]
-    setMessages(updatedMessages)
+    // Parse @mention from user input
+    const { agent: mentionedAgent, content: messageContent } = parseMention(content)
+    let currentAgent = mentionedAgent || agent
 
-    const currentToolCalls: ToolCall[] = []
+    // Switch to mentioned agent if valid
+    if (mentionedAgent) {
+      onAgentChange?.(mentionedAgent)
+    }
 
-    for await (const event of runAgent(updatedMessages, agent)) {
-      switch (event.type) {
-        case "text":
-          setStreamingText(event.text)
-          break
+    // If only @mention with no content, just switch agent
+    if (!messageContent.trim()) {
+      setIsLoading(false)
+      return
+    }
 
-        case "tool_start":
-          currentToolCalls.push({
-            id: event.id,
-            name: event.name,
-            args: {},
-            status: "running"
-          })
-          setToolCalls([...currentToolCalls])
-          break
+    const userMessage: Message = { role: "user", content: messageContent }
+    let currentMessages = [...messages, userMessage]
+    setMessages(currentMessages)
 
-        case "tool_args": {
-          const tc = currentToolCalls.find(t => t.id === event.id)
-          if (tc) {
-            tc.args = event.args
+    let chainDepth = 0
+
+    while (chainDepth < MAX_CHAIN_DEPTH) {
+      chainDepth++
+
+      const currentToolCalls: ToolCall[] = []
+      let responseText = ""
+
+      for await (const event of runAgent(currentMessages, currentAgent)) {
+        switch (event.type) {
+          case "text":
+            setStreamingText(event.text)
+            break
+
+          case "tool_start":
+            currentToolCalls.push({
+              id: event.id,
+              name: event.name,
+              args: {},
+              status: "running"
+            })
             setToolCalls([...currentToolCalls])
-          }
-          break
-        }
+            break
 
-        case "tool_done": {
-          const tc = currentToolCalls.find(t => t.id === event.id)
-          if (tc) {
-            tc.status = "done"
-            tc.result = event.result
-            setToolCalls([...currentToolCalls])
+          case "tool_args": {
+            const tc = currentToolCalls.find(t => t.id === event.id)
+            if (tc) {
+              tc.args = event.args
+              setToolCalls([...currentToolCalls])
+            }
+            break
           }
-          break
-        }
 
-        case "tool_error": {
-          const tc = currentToolCalls.find(t => t.id === event.id)
-          if (tc) {
-            tc.status = "error"
-            tc.result = event.error
-            setToolCalls([...currentToolCalls])
+          case "tool_done": {
+            const tc = currentToolCalls.find(t => t.id === event.id)
+            if (tc) {
+              tc.status = "done"
+              tc.result = event.result
+              setToolCalls([...currentToolCalls])
+            }
+            break
           }
-          break
-        }
 
-        case "done":
-          if (event.response) {
-            setMessages(prev => [...prev, { role: "assistant", content: event.response, agentName: agent.name }])
+          case "tool_error": {
+            const tc = currentToolCalls.find(t => t.id === event.id)
+            if (tc) {
+              tc.status = "error"
+              tc.result = event.error
+              setToolCalls([...currentToolCalls])
+            }
+            break
           }
-          setStreamingText("")
-          break
+
+          case "done":
+            responseText = event.response
+            if (responseText) {
+              const assistantMessage: Message = {
+                role: "assistant",
+                content: responseText,
+                agentName: currentAgent.name
+              }
+              currentMessages = [...currentMessages, assistantMessage]
+              setMessages(currentMessages)
+            }
+            setStreamingText("")
+            break
+        }
+      }
+
+      // Check for chaining - does response mention another agent?
+      const { agent: nextAgent } = extractMention(responseText)
+      if (nextAgent && nextAgent.name !== currentAgent.name) {
+        currentAgent = nextAgent
+        onAgentChange?.(nextAgent)
+        setToolCalls([])
+      } else {
+        break
       }
     }
 
     setIsLoading(false)
-  }, [messages, agent])
+  }, [messages, agent, onAgentChange])
 
   return {
     messages,
