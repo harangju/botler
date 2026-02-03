@@ -1,8 +1,9 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect, useRef } from "react"
 import { runAgent } from "../../core/engine.js"
 import type { Message, ToolCall } from "../../core/types.js"
 import { defaultAgent, type Agent } from "../../agents/index.js"
 import { parseMention, extractMention } from "../../core/mentions.js"
+import { loadMemory, appendToMemory, archiveConversation } from "../../core/storage.js"
 
 const MAX_CHAIN_DEPTH = 5
 
@@ -14,28 +15,49 @@ export function useChat(
   const [toolCalls, setToolCalls] = useState<ToolCall[]>([])
   const [streamingText, setStreamingText] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [memory, setMemory] = useState("")
+  const messagesRef = useRef<Message[]>([])
+
+  useEffect(() => {
+    messagesRef.current = messages
+  }, [messages])
+
+  useEffect(() => {
+    loadMemory(agent.name).then(setMemory)
+  }, [agent.name])
+
+  useEffect(() => {
+    return () => {
+      if (messagesRef.current.length > 0) {
+        archiveConversation(messagesRef.current)
+      }
+    }
+  }, [])
+
+  const remember = useCallback(async (content: string) => {
+    await appendToMemory(agent.name, content)
+    const updated = await loadMemory(agent.name)
+    setMemory(updated)
+  }, [agent.name])
 
   const sendMessage = useCallback(async (content: string) => {
     setIsLoading(true)
     setStreamingText("")
     setToolCalls([])
 
-    // Parse @mention from user input
     const { agent: mentionedAgent, content: messageContent } = parseMention(content)
     let currentAgent = mentionedAgent || agent
 
-    // Switch to mentioned agent if valid
     if (mentionedAgent) {
       onAgentChange?.(mentionedAgent)
     }
 
-    // If only @mention with no content, just switch agent
     if (!messageContent.trim()) {
       setIsLoading(false)
       return
     }
 
-    const userMessage: Message = { role: "user", content: messageContent }
+    const userMessage: Message = { role: "user", content: messageContent, timestamp: new Date().toISOString() }
     let currentMessages = [...messages, userMessage]
     setMessages(currentMessages)
 
@@ -47,7 +69,7 @@ export function useChat(
       const currentToolCalls: ToolCall[] = []
       let responseText = ""
 
-      for await (const event of runAgent(currentMessages, currentAgent)) {
+      for await (const event of runAgent(currentMessages, currentAgent, memory)) {
         switch (event.type) {
           case "text":
             setStreamingText(event.text)
@@ -98,7 +120,8 @@ export function useChat(
               const assistantMessage: Message = {
                 role: "assistant",
                 content: responseText,
-                agentName: currentAgent.name
+                agentName: currentAgent.name,
+                timestamp: new Date().toISOString()
               }
               currentMessages = [...currentMessages, assistantMessage]
               setMessages(currentMessages)
@@ -108,7 +131,6 @@ export function useChat(
         }
       }
 
-      // Check for chaining - does response mention another agent?
       const { agent: nextAgent } = extractMention(responseText)
       if (nextAgent && nextAgent.name !== currentAgent.name) {
         currentAgent = nextAgent
@@ -120,13 +142,15 @@ export function useChat(
     }
 
     setIsLoading(false)
-  }, [messages, agent, onAgentChange])
+  }, [messages, agent, onAgentChange, memory])
 
   return {
     messages,
     toolCalls,
     streamingText,
     isLoading,
-    sendMessage
+    sendMessage,
+    memory,
+    remember
   }
 }

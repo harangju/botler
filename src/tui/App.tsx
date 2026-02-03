@@ -10,7 +10,8 @@ export function App() {
   const { exit } = useApp()
   const [inputValue, setInputValue] = useState("")
   const [currentAgent, setCurrentAgent] = useState(defaultAgent)
-  const { messages, toolCalls, streamingText, isLoading, sendMessage } = useChat(currentAgent, setCurrentAgent)
+  const [statusMessage, setStatusMessage] = useState("")
+  const { messages, toolCalls, streamingText, isLoading, sendMessage, memory, remember } = useChat(currentAgent, setCurrentAgent)
 
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
@@ -18,28 +19,48 @@ export function App() {
     }
   })
 
-  const handleSubmit = useCallback((value: string) => {
-    if (!value.trim() || isLoading) return
+  const handleSubmit = useCallback(async (value: string) => {
+    const input = value.trim()
+    if (!input || isLoading) return
 
-    // Handle /agent command
-    if (value.startsWith("/agent")) {
-      const parts = value.split(" ")
-      if (parts.length === 1) {
-        // List agents
-        return
+    // Handle commands
+    if (input.startsWith("/")) {
+      const [cmd, ...args] = input.split(" ")
+
+      switch (cmd) {
+        case "/agent":
+          if (args[0]) {
+            const agent = getAgent(args[0])
+            if (agent) setCurrentAgent(agent)
+          }
+          setInputValue("")
+          return
+
+        case "/remember":
+          if (args.length > 0) {
+            const content = args.join(" ")
+            await remember(content)
+            setStatusMessage(`Remembered: ${content}`)
+            setTimeout(() => setStatusMessage(""), 3000)
+          }
+          setInputValue("")
+          return
+
+        case "/memory":
+          if (memory) {
+            setStatusMessage(`Memory:\n${memory}`)
+          } else {
+            setStatusMessage("No memory yet. Use /remember <text> to add.")
+          }
+          setTimeout(() => setStatusMessage(""), 10000)
+          setInputValue("")
+          return
       }
-      const agentName = parts[1]
-      const agent = getAgent(agentName)
-      if (agent) {
-        setCurrentAgent(agent)
-      }
-      setInputValue("")
-      return
     }
 
-    sendMessage(value.trim())
+    sendMessage(input)
     setInputValue("")
-  }, [isLoading, sendMessage])
+  }, [isLoading, sendMessage, remember, memory])
 
   return (
     <Box flexDirection="column" padding={1}>
@@ -47,8 +68,14 @@ export function App() {
         <Text bold color="cyan">botler</Text>
         <Text dimColor> • </Text>
         <Text color="yellow">@{currentAgent.name}</Text>
-        <Text dimColor> • /agent [name] to switch • ctrl+c to exit</Text>
+        <Text dimColor> • /agent /memory /remember • ctrl+c to exit</Text>
       </Box>
+
+      {statusMessage && (
+        <Box marginBottom={1} borderStyle="single" borderColor="gray" paddingX={1}>
+          <Text>{statusMessage}</Text>
+        </Box>
+      )}
 
       <Box flexDirection="column" flexGrow={1}>
         {messages.map((msg, i) => (

@@ -7,10 +7,15 @@ import { defaultAgent, type Agent } from "../agents/index.js"
 export async function* runAgent(
   messages: Message[],
   agent: Agent = defaultAgent,
+  memory: string = "",
   model = "claude-sonnet-4-20250514"
 ): AsyncGenerator<EngineEvent> {
   const client = getClient()
   const tools = getToolSchemas()
+
+  const systemPrompt = memory
+    ? `${agent.systemPrompt}\n\n## Memory\n\n${memory}`
+    : agent.systemPrompt
 
   const apiMessages: Anthropic.MessageParam[] = messages.map(m => ({
     role: m.role,
@@ -28,7 +33,7 @@ export async function* runAgent(
     const stream = client.messages.stream({
       model,
       max_tokens: 4096,
-      system: agent.systemPrompt,
+      system: systemPrompt,
       tools,
       messages: apiMessages
     })
