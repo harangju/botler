@@ -5,6 +5,9 @@ import uuid
 from pathlib import Path
 
 import click
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from botler import __version__
 from botler.core.engine import PydanticEngine
