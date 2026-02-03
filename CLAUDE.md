@@ -6,5 +6,5 @@
 - automate
 
 # rules
-- use uv for python
+- use bun for typescript
 - no "co-authored-by claude"
