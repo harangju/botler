@@ -1,5 +1,7 @@
 """AgentEngine protocol and implementations."""
 
+import json
+from collections.abc import AsyncIterator
 from typing import Protocol
 
 from pydantic_ai import Agent
@@ -15,6 +17,13 @@ class AgentEngine(Protocol):
     async def run(self, prompt: str, context: AgentContext, history: list[Message]) -> AgentResult:
         """Run the agent with a prompt and return the result."""
         ...
+
+    async def run_stream(
+        self, prompt: str, context: AgentContext, history: list[Message]
+    ) -> AsyncIterator[str | AgentResult]:
+        """Run the agent with streaming, yielding tokens then final result."""
+        ...
+        yield ""  # type: ignore
 
 
 def _messages_to_pydantic(messages: list[Message]) -> list[ModelMessage]:
@@ -56,12 +65,11 @@ class PydanticEngine:
                 if hasattr(msg, "parts"):
                     for part in msg.parts:
                         if hasattr(part, "tool_name"):
+                            args = {}
+                            if hasattr(part, "args") and part.args:
+                                args = json.loads(part.args) if isinstance(part.args, str) else part.args
                             tool_calls.append(
-                                ToolCall(
-                                    name=part.tool_name,
-                                    args=part.args if hasattr(part, "args") else {},
-                                    result=None,
-                                )
+                                ToolCall(name=part.tool_name, args=args, result=None)
                             )
 
             return AgentResult(
@@ -70,6 +78,46 @@ class PydanticEngine:
             )
         except Exception as e:
             return AgentResult(
+                response="",
+                error=str(e),
+            )
+
+    async def run_stream(
+        self, prompt: str, context: AgentContext, history: list[Message]
+    ) -> AsyncIterator[str | AgentResult]:
+        """Run the agent with streaming, yielding tokens then final AgentResult."""
+        deps = ToolDeps(workspace_path=context.workspace_path)
+        message_history = _messages_to_pydantic(history) if history else None
+
+        try:
+            async with self.agent.run_stream(
+                prompt,
+                deps=deps,
+                message_history=message_history,
+            ) as response:
+                full_response = ""
+                async for token in response.stream_text(delta=True):
+                    full_response += token
+                    yield token
+
+                tool_calls = []
+                for msg in response.new_messages():
+                    if hasattr(msg, "parts"):
+                        for part in msg.parts:
+                            if hasattr(part, "tool_name"):
+                                args = {}
+                                if hasattr(part, "args") and part.args:
+                                    args = json.loads(part.args) if isinstance(part.args, str) else part.args
+                                tool_calls.append(
+                                    ToolCall(name=part.tool_name, args=args, result=None)
+                                )
+
+                yield AgentResult(
+                    response=full_response,
+                    tool_calls=tool_calls,
+                )
+        except Exception as e:
+            yield AgentResult(
                 response="",
                 error=str(e),
             )

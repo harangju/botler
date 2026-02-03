@@ -1,6 +1,7 @@
 """CLI entrypoint for Botler."""
 
 import asyncio
+import sys
 import uuid
 from pathlib import Path
 
@@ -11,7 +12,7 @@ load_dotenv()
 
 from botler import __version__
 from botler.core.engine import PydanticEngine
-from botler.core.schemas import AgentContext, Message
+from botler.core.schemas import AgentContext, AgentResult, Message
 from botler.core.workspace import Workspace
 
 
@@ -88,22 +89,27 @@ async def _chat_async(workspace_path: Path, agent_name: str, thread_id: str | No
         history = ws.load_messages(thread_id)
 
         click.echo("Agent> ", nl=False)
-        result = await engine.run(user_input, context, history[:-1])
+        result = None
+        async for chunk in engine.run_stream(user_input, context, history[:-1]):
+            if isinstance(chunk, AgentResult):
+                result = chunk
+            else:
+                click.echo(chunk, nl=False)
+                sys.stdout.flush()
+        click.echo()
 
-        if result.error:
+        if result and result.error:
             click.echo(f"Error: {result.error}")
-        else:
-            click.echo(result.response)
 
-        if result.tool_calls:
+        if result and result.tool_calls:
             tools_used = ", ".join(tc.name for tc in result.tool_calls)
             click.echo(click.style(f"  [tools: {tools_used}]", fg="cyan"))
 
         assistant_msg = Message(
             role="assistant",
-            content=result.response,
+            content=result.response if result else "",
             agent_id=agent_name,
-            tool_calls=result.tool_calls,
+            tool_calls=result.tool_calls if result else [],
         )
         ws.append_message(thread_id, assistant_msg)
         click.echo()

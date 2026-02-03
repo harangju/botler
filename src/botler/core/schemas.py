@@ -29,7 +29,7 @@ class AgentConfig(BaseModel):
     """Configuration for an agent, loaded from YAML."""
 
     name: str
-    model: str = "anthropic:claude-3-haiku-20240307"
+    model: str = "anthropic:claude-3-5-haiku-20241022"
     persona: str = "You are a helpful assistant."
 
 
