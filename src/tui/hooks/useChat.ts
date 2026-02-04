@@ -3,7 +3,7 @@ import { runAgent } from "../../core/engine.js"
 import type { Message, ToolCall } from "../../core/types.js"
 import { defaultAgent, type Agent } from "../../agents/index.js"
 import { parseMention, extractMention } from "../../core/mentions.js"
-import { loadMemory, appendToMemory, archiveConversation } from "../../core/storage.js"
+import { loadMemory, appendToMemory, archiveConversation, compactMemory, writeMemory } from "../../core/storage.js"
 
 const MAX_CHAIN_DEPTH = 5
 
@@ -16,11 +16,27 @@ export function useChat(
   const [streamingText, setStreamingText] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [memory, setMemory] = useState("")
+  const [artifacts, setArtifacts] = useState<string[]>([])
   const messagesRef = useRef<Message[]>([])
+  const artifactsRef = useRef<string[]>([])
+  const agentRef = useRef(agent)
+  const memoryRef = useRef(memory)
 
   useEffect(() => {
     messagesRef.current = messages
   }, [messages])
+
+  useEffect(() => {
+    artifactsRef.current = artifacts
+  }, [artifacts])
+
+  useEffect(() => {
+    agentRef.current = agent
+  }, [agent])
+
+  useEffect(() => {
+    memoryRef.current = memory
+  }, [memory])
 
   useEffect(() => {
     loadMemory(agent.name).then(setMemory)
@@ -39,6 +55,33 @@ export function useChat(
     const updated = await loadMemory(agent.name)
     setMemory(updated)
   }, [agent.name])
+
+  const compact = useCallback(async () => {
+    if (messages.length === 0) return
+
+    const toolId = `compact-${Date.now()}`
+    const toolCall: ToolCall = {
+      id: toolId,
+      name: "compact_memory",
+      args: { agent: agent.name, messages: messages.length, artifacts: artifacts.length },
+      status: "running"
+    }
+    setToolCalls([toolCall])
+
+    try {
+      const newMemory = await compactMemory(
+        agent.name,
+        agent.systemPrompt,
+        memory,
+        { messages, artifacts, agent: agent.name }
+      )
+      await writeMemory(agent.name, newMemory)
+      setMemory(newMemory)
+      setToolCalls([{ ...toolCall, status: "done", result: "Memory compacted" }])
+    } catch (err) {
+      setToolCalls([{ ...toolCall, status: "error", result: String(err) }])
+    }
+  }, [agent.name, agent.systemPrompt, memory, messages, artifacts])
 
   const sendMessage = useCallback(async (content: string) => {
     setIsLoading(true)
@@ -100,6 +143,10 @@ export function useChat(
               tc.status = "done"
               tc.result = event.result
               setToolCalls([...currentToolCalls])
+              if (tc.name === "write_file" || tc.name === "edit_file") {
+                const path = tc.args.path as string
+                if (path) setArtifacts(prev => [...prev, path])
+              }
             }
             break
           }
@@ -151,6 +198,7 @@ export function useChat(
     isLoading,
     sendMessage,
     memory,
-    remember
+    remember,
+    compact
   }
 }

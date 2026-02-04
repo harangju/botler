@@ -20,3 +20,9 @@ export type EngineEvent =
   | { type: "tool_done"; id: string; result: string }
   | { type: "tool_error"; id: string; error: string }
   | { type: "done"; response: string }
+
+export interface SessionSummary {
+  messages: Message[]
+  artifacts: string[]
+  agent: string
+}

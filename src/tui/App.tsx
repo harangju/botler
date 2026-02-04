@@ -11,11 +11,18 @@ export function App() {
   const [inputValue, setInputValue] = useState("")
   const [currentAgent, setCurrentAgent] = useState(defaultAgent)
   const [statusMessage, setStatusMessage] = useState("")
-  const { messages, toolCalls, streamingText, isLoading, sendMessage, memory, remember } = useChat(currentAgent, setCurrentAgent)
+  const [isExiting, setIsExiting] = useState(false)
+  const { messages, toolCalls, streamingText, isLoading, sendMessage, memory, remember, compact } = useChat(currentAgent, setCurrentAgent)
 
   useInput((input, key) => {
     if (key.ctrl && input === "c") {
-      exit()
+      if (isExiting) return
+      if (messages.length === 0) {
+        exit()
+        return
+      }
+      setIsExiting(true)
+      compact().then(() => exit())
     }
   })
 
@@ -55,12 +62,17 @@ export function App() {
           setTimeout(() => setStatusMessage(""), 10000)
           setInputValue("")
           return
+
+        case "/compact":
+          compact()
+          setInputValue("")
+          return
       }
     }
 
     sendMessage(input)
     setInputValue("")
-  }, [isLoading, sendMessage, remember, memory])
+  }, [isLoading, sendMessage, remember, memory, compact])
 
   return (
     <Box flexDirection="column" padding={1}>
@@ -68,7 +80,7 @@ export function App() {
         <Text bold color="cyan">botler</Text>
         <Text dimColor> • </Text>
         <Text color="yellow">@{currentAgent.name}</Text>
-        <Text dimColor> • /agent /memory /remember • ctrl+c to exit</Text>
+        <Text dimColor> • /agent /memory /remember /compact • ctrl+c to exit</Text>
       </Box>
 
       {statusMessage && (
@@ -102,8 +114,9 @@ export function App() {
           value={inputValue}
           onChange={setInputValue}
           onSubmit={handleSubmit}
-          placeholder={isLoading ? "Thinking..." : "Type a message..."}
-          disabled={isLoading}
+          placeholder={isExiting ? "Compacting memory..." : (isLoading && !streamingText) ? "Thinking..." : "Type a message..."}
+          disabled={isLoading || isExiting}
+          showSpinner={isExiting || (isLoading && !streamingText)}
         />
       </Box>
     </Box>

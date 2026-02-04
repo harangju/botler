@@ -9,6 +9,7 @@ const TOOL_ICONS: Record<string, string> = {
   glob: "*",
   grep: "?",
   ls: "#",
+  compact_memory: "◆",
 }
 
 interface ToolCallProps {
@@ -35,6 +36,9 @@ function getSummary(name: string, args: Record<string, unknown>): string {
   if (name === "ls") {
     return String(args.path || ".")
   }
+  if (name === "compact_memory") {
+    return `${args.messages} messages, ${args.artifacts} artifacts`
+  }
   return JSON.stringify(args).slice(0, 40)
 }
 
@@ -48,7 +52,7 @@ function getResultSummary(name: string, result?: string): string {
     const lines = result.trim().split("\n").length
     return `${lines} lines`
   }
-  if (["write_file", "edit_file"].includes(name)) {
+  if (["write_file", "edit_file", "compact_memory"].includes(name)) {
     return "done"
   }
   return ""

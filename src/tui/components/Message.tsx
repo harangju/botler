@@ -13,10 +13,12 @@ export function Message({ role, content, name, streaming }: MessageProps) {
 
   return (
     <Box marginY={0}>
-      <Text color={isUser ? "green" : "magenta"} bold>
-        {label}
-      </Text>
-      <Text>: </Text>
+      <Box flexShrink={0}>
+        <Text color={isUser ? "green" : "magenta"} bold>
+          {label}
+        </Text>
+        <Text>: </Text>
+      </Box>
       <Box flexDirection="column" flexGrow={1}>
         <Text wrap="wrap">
           {content}
